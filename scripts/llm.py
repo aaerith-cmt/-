@@ -1,43 +1,67 @@
 """LLM-powered steps for the paper-collecter pipeline.
-Calls any OpenAI-compatible /chat/completions endpoint (DeepSeek, OpenAI, etc.).
-Credentials from env vars: AI_BASE_URL, AI_API_KEY, AI_MODEL.
+Supports BOTH OpenAI-compatible (/v1/chat/completions) and Anthropic-compatible
+(/anthropic/v1/messages) endpoints. Auto-detects from AI_BASE_URL.
 Python stdlib only — no pip install required.
 """
 import os
 import json
 import urllib.request
 
-AI_BASE = os.environ.get("AI_BASE_URL", "https://api.deepseek.com/v1")
+AI_BASE = os.environ.get("AI_BASE_URL", "https://api.deepseek.com/anthropic")
 AI_KEY  = os.environ.get("AI_API_KEY", "")
-AI_MODEL = os.environ.get("AI_MODEL", "deepseek-chat")
+AI_MODEL = os.environ.get("AI_MODEL", "deepseek-v4-pro")
+
+# Auto-detect endpoint type
+_IS_ANTHROPIC = "/anthropic" in AI_BASE
+
 
 def _chat(system: str, user: str, temperature: float = 0.3, max_tokens: int = 4096) -> str:
     """Single-turn chat. Returns response text or '' on failure."""
     if not AI_KEY:
         print("[llm] AI_API_KEY not set — skipping LLM step")
         return ""
-    url = AI_BASE.rstrip("/") + "/chat/completions"
-    body = {
-        "model": AI_MODEL,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    }
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(body).encode("utf-8"),
-        headers={
+
+    if _IS_ANTHROPIC:
+        # Anthropic Messages API format
+        url = AI_BASE.rstrip("/") + "/v1/messages"
+        body = {
+            "model": AI_MODEL,
+            "max_tokens": max_tokens,
+            "system": system,
+            "messages": [{"role": "user", "content": user}],
+        }
+        headers = {
+            "x-api-key": AI_KEY,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+    else:
+        # OpenAI-compatible chat/completions format
+        url = AI_BASE.rstrip("/") + "/chat/completions"
+        body = {
+            "model": AI_MODEL,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        headers = {
             "Authorization": f"Bearer {AI_KEY}",
             "Content-Type": "application/json",
-        },
-    )
+        }
+
+    req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"), headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=120) as r:
             data = json.loads(r.read())
-        return data["choices"][0]["message"]["content"].strip()
+        if _IS_ANTHROPIC:
+            # Anthropic response: {"content": [{"type": "text", "text": "..."}]}
+            blocks = data.get("content", [])
+            return "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
+        else:
+            return data["choices"][0]["message"]["content"].strip()
     except Exception as e:
         print(f"[llm] API call failed: {e}")
         return ""
@@ -60,9 +84,8 @@ def expand_queries(keyword: str, domain: str = "physics") -> list[str]:
     user = f"Keyword: {keyword}\nDomain: {domain}"
     raw = _chat(EXPAND_SYSTEM, user, temperature=0.4, max_tokens=256)
     if not raw:
-        return [keyword]  # fallback: use keyword verbatim
+        return [keyword]
     try:
-        # Strip markdown code fences if present
         raw = raw.strip()
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
@@ -98,16 +121,22 @@ Return ONLY valid JSON (no markdown fences, no other text) — an array of the k
   "contributions": ["...", "..."]
 }, ...]
 
-Sort papers first, GitHub repos last."""
+Sort papers (arXiv, Crossref) first, GitHub repos last."""
+
+
+def _dumb_filter(candidates: list[dict]) -> list[dict]:
+    """No-LLM fallback: keep only academic sources (arXiv/Crossref), drop GitHub."""
+    kept = [c for c in candidates if c.get("source") in ("arXiv", "Crossref", "Semantic Scholar")]
+    print(f"[llm] dumb filter: kept {len(kept)}/{len(candidates)} (academic sources only)")
+    return [{**c, "tldr": (c.get("abstract", "") or "")[:80],
+             "method": "", "contributions": []} for c in kept]
+
 
 def filter_and_summarize(candidates: list[dict]) -> list[dict]:
-    """Filter candidates for physics relevance and add Chinese summaries.
-    Returns the curated list (original fields + tldr/method/contributions).
-    """
+    """Filter candidates for physics relevance and add Chinese summaries."""
     if not candidates:
         return []
 
-    # Build a slim input for the LLM — only what it needs
     slim = []
     for c in candidates:
         slim.append({
@@ -120,27 +149,22 @@ def filter_and_summarize(candidates: list[dict]) -> list[dict]:
     user = json.dumps(slim, ensure_ascii=False, indent=2)
     raw = _chat(FILTER_SYSTEM, user, temperature=0.3, max_tokens=4096)
     if not raw:
-        print("[llm] filter step failed, keeping all candidates with basic tldr")
-        # Fallback: keep all, use abstract as tldr
-        return [{**c, "tldr": (c.get("abstract", "") or "")[:60],
-                 "method": "", "contributions": []} for c in candidates]
+        print("[llm] filter API failed — using dumb filter (academic sources only, no GitHub spam)")
+        return _dumb_filter(candidates)
 
     raw = raw.strip()
     if raw.startswith("```"):
-        raw = raw.split("\n", 1)[-1].rsplit("```", 0)[0].strip()
+        raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
 
     try:
         kept = json.loads(raw)
     except json.JSONDecodeError:
-        print("[llm] filter parse failed, keeping all with basic tldr")
-        return [{**c, "tldr": (c.get("abstract", "") or "")[:60],
-                 "method": "", "contributions": []} for c in candidates]
+        print("[llm] filter parse failed — using dumb filter")
+        return _dumb_filter(candidates)
 
-    # Merge LLM output back into original candidate dicts by title
     out = []
     for item in kept:
         title = item.get("title", "")
-        # Find matching candidate
         match = next((c for c in candidates if c.get("title") == title), None)
         if match:
             out.append({**match, **item})
@@ -162,7 +186,6 @@ and write a <=80 char Chinese summary of what's trending. Return ONLY valid JSON
           "papers": ["paper title 1", "paper title 2"]}, ...]}"""
 
 def synthesize_trends(curated: list[dict]) -> dict:
-    """Return a trends summary dict or empty dict on failure."""
     if len(curated) < 3:
         return {"top": []}
 
@@ -174,7 +197,7 @@ def synthesize_trends(curated: list[dict]) -> dict:
         return {"top": []}
     raw = raw.strip()
     if raw.startswith("```"):
-        raw = raw.split("\n", 1)[-1].rsplit("```", 0)[0].strip()
+        raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
