@@ -13,6 +13,8 @@ jobs:
   digest:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      ACTIONS_RUNNER_FORCE_ACTIONS_NODE_VERSION_FOR_ACTIONS_CORE: node24
 
     steps:
       - name: Checkout repo
