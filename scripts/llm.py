@@ -63,12 +63,21 @@ def _chat(system: str, user: str, temperature: float = 0.3, max_tokens: int = 40
                   f"content_len={len(json.dumps(data))}")
         if _IS_ANTHROPIC:
             blocks = data.get("content", [])
+            # Debug: show raw content structure
+            if blocks:
+                b0 = blocks[0] if isinstance(blocks, list) else blocks
+                print(f"[llm] content type={type(blocks).__name__}, block0 keys={list(b0.keys()) if isinstance(b0, dict) else type(b0).__name__}")
             text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
-            print(f"[llm] anthropic parsed: {len(blocks)} blocks, text_len={len(text)}")
-            if not text and not blocks:
-                # Maybe the response uses a different format?
-                print(f"[llm] WARNING: no content blocks found, raw keys: {list(data.keys())}")
-                print(f"[llm] raw sample: {str(data)[:300]}")
+            # Fallback: try other field names
+            if not text and isinstance(blocks, list):
+                for b in blocks:
+                    if isinstance(b, dict):
+                        text += b.get("text", "") or b.get("value", "") or b.get("content", "") or ""
+            if not text and isinstance(blocks, str):
+                text = blocks
+            print(f"[llm] anthropic parsed: {len(blocks) if isinstance(blocks, list) else 1} blocks, text_len={len(text)}")
+            if not text and blocks:
+                print(f"[llm] WARNING: no text extracted, raw blocks: {str(blocks)[:300]}")
             return text
         else:
             text = data["choices"][0]["message"]["content"].strip()
