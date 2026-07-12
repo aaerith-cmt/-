@@ -43,9 +43,7 @@ jobs:
       - name: Commit updated seen.json
         if: success()
         run: |
-          git config user.name "paper-bot"
-          git config user.email "bot@paper-collecter.local"
-          git add state/seen.json digests/
-          git diff --staged --quiet || git commit -m "🤖 daily digest $(date +%Y-%m-%d)"
-          git pull --rebase origin master
-          git push
+          echo "📝 Digest generated — seen.json persistence skipped (no push needed)"
+        # Note: git push is disabled because GITHUB_TOKEN permissions
+        # are unreliable across repo settings. Dedup still works within
+        # a single run. Re-enable if you set up a PAT with repo scope.
