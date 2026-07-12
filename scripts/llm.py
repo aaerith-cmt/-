@@ -57,13 +57,22 @@ def _chat(system: str, user: str, temperature: float = 0.3, max_tokens: int = 40
     req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"), headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=120) as r:
-            data = json.loads(r.read())
+            raw_bytes = r.read()
+            data = json.loads(raw_bytes)
+            print(f"[llm] HTTP {r.status}, resp keys: {list(data.keys())[:5]}, "
+                  f"content_len={len(json.dumps(data))}")
         if _IS_ANTHROPIC:
-            # Anthropic response: {"content": [{"type": "text", "text": "..."}]}
             blocks = data.get("content", [])
-            return "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
+            text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
+            print(f"[llm] anthropic parsed: {len(blocks)} blocks, text_len={len(text)}")
+            if not text and not blocks:
+                # Maybe the response uses a different format?
+                print(f"[llm] WARNING: no content blocks found, raw keys: {list(data.keys())}")
+                print(f"[llm] raw sample: {str(data)[:300]}")
+            return text
         else:
-            return data["choices"][0]["message"]["content"].strip()
+            text = data["choices"][0]["message"]["content"].strip()
+            return text
     except Exception as e:
         print(f"[llm] API call failed: {e}")
         return ""
