@@ -2,8 +2,8 @@ name: Daily Paper Digest
 
 on:
   schedule:
-    # 每天北京时间 08:00 (UTC 00:00)
-    - cron: '0 0 * * *'
+    # 每天北京时间 10:00 (UTC 02:00)
+    - cron: '0 2 * * *'
   # 也允许手动触发和 push 触发测试
   workflow_dispatch:
   push:
