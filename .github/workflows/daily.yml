@@ -2,31 +2,20 @@ name: Daily Paper Digest
 
 on:
   schedule:
-    # 每天北京时间 10:00 (UTC 02:00)
-    - cron: '0 2 * * *'
-  # 也允许手动触发和 push 触发测试
+    - cron: '37 2 * * *'
   workflow_dispatch:
   push:
-    branches: [main]
-
-permissions:
-  contents: write
+    branches: [master]
 
 jobs:
   digest:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      ACTIONS_RUNNER_FORCE_ACTIONS_NODE_VERSION_FOR_ACTIONS_CORE: node24
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: true
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
@@ -37,13 +26,4 @@ jobs:
           AI_MODEL: ${{ secrets.AI_MODEL }}
           SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
           SEMANTIC_SCHOLAR_KEY: ${{ secrets.SEMANTIC_SCHOLAR_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python pipeline.py
-
-      - name: Commit updated seen.json
-        if: success()
-        run: |
-          echo "📝 Digest generated — seen.json persistence skipped (no push needed)"
-        # Note: git push is disabled because GITHUB_TOKEN permissions
-        # are unreliable across repo settings. Dedup still works within
-        # a single run. Re-enable if you set up a PAT with repo scope.
