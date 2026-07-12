@@ -1,0 +1,16 @@
+{
+  "keywords": ["Quantum Gases", "Superconductivity", "Strongly Correlated Electrons", "Statistical Mechanics"],
+  "domain": "physics",
+  "sources": {
+    "arXiv": true,
+    "Crossref": true,
+    "Semantic Scholar": true,
+    "GitHub": true,
+    "HuggingFace": false,
+    "PapersWithCode": false,
+    "RSS": true
+  },
+  "lookback_days": 5,
+  "max_per_source": 12,
+  "rss_feeds": ["http://export.arxiv.org/rss/cond-mat"]
+}

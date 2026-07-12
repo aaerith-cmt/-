@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local env (use GitHub Secrets instead)
+.env
+.env.local
+
+# Digests are committed to repo for history
+# (they are small text files)
