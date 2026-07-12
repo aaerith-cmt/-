@@ -110,29 +110,28 @@ def expand_queries(keyword: str, domain: str = "physics") -> list[str]:
 # Step 3 — Filter relevance & write Chinese summaries
 # ---------------------------------------------------------------------------
 
-FILTER_SYSTEM = """You are a Chinese-speaking condensed-matter physicist curating a daily
-literature digest. You receive a JSON array of candidate papers. For EACH
-item decide:
+FILTER_SYSTEM = """你是凝聚态物理领域的中国研究员，正在策划每日文献简报。你会收到一个候选论文的JSON数组。对每篇文章：
 
-1. Is it genuinely about physics / condensed matter / quantum science?
-   Drop blockchain, finance, pure CS, medical, random GitHub repos with no
-   physics connection.
+1. 判断是否真正与物理学/凝聚态物理/量子科学相关。删除以下内容：区块链、金融科技、纯计算机科学、医学研究、与物理无关的GitHub仓库。
 
-2. For KEPT items, write a concise Chinese summary:
-   - "tldr": 一句话核心 (<=60字)
-   - "method": 方法简述 (<=80字), leave empty for GitHub repos
-   - "contributions": [核心贡献1, 核心贡献2] (1-3 items), leave empty for GitHub repos
+2. 对保留的文章，在阅读完整摘要后，用中文撰写详细摘要：
+   - "tldr": 用一句话（<=80字）概括这篇论文的核心发现或创新点
+   - "method": 简要描述研究方法或技术路线（<=100字），GitHub仓库留空
+   - "contributions": 列出2-3个具体核心贡献（每条<=50字），要具体不要空洞，GitHub仓库留空
 
-Return ONLY valid JSON (no markdown fences, no other text) — an array of the kept items:
+重要：不要只是翻译标题！要基于摘要内容提炼真正的科学贡献。
+如果没有足够信息写method和contributions，可以基于摘要合理推断。
+
+只返回有效JSON（不要markdown代码块，不要其他文字）——保留项目的数组：
 
 [{
-  "title": "原样保留",
-  "tldr": "...",
-  "method": "...",
-  "contributions": ["...", "..."]
+  "title": "保持原标题",
+  "tldr": "用中文写的一句话说清楚论文做了什么",
+  "method": "用了什么方法/技术",
+  "contributions": ["贡献1", "贡献2"]
 }, ...]
 
-Sort papers (arXiv, Crossref) first, GitHub repos last."""
+论文（arXiv、Crossref）排在前面，GitHub仓库排在最后。"""
 
 
 def _dumb_filter(candidates: list[dict]) -> list[dict]:
@@ -158,7 +157,7 @@ def filter_and_summarize(candidates: list[dict]) -> list[dict]:
             "venue": c.get("venue", ""),
         })
     user = json.dumps(slim, ensure_ascii=False, indent=2)
-    raw = _chat(FILTER_SYSTEM, user, temperature=0.3, max_tokens=4096)
+    raw = _chat(FILTER_SYSTEM, user, temperature=0.3, max_tokens=8192)
     if not raw:
         print("[llm] filter API failed — using dumb filter (academic sources only, no GitHub spam)")
         return _dumb_filter(candidates)
