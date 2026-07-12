@@ -14,6 +14,8 @@ AI_MODEL = os.environ.get("AI_MODEL", "deepseek-v4-pro")
 # Auto-detect endpoint type
 _IS_ANTHROPIC = "/anthropic" in AI_BASE
 
+print(f"[llm] DEBUG: base={AI_BASE[:50]} model={AI_MODEL} key_ok={'yes' if AI_KEY else 'MISSING!'} anthropic={_IS_ANTHROPIC}")
+
 
 def _chat(system: str, user: str, temperature: float = 0.3, max_tokens: int = 4096) -> str:
     """Single-turn chat. Returns response text or '' on failure."""
