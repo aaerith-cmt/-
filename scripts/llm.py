@@ -63,21 +63,24 @@ def _chat(system: str, user: str, temperature: float = 0.3, max_tokens: int = 40
                   f"content_len={len(json.dumps(data))}")
         if _IS_ANTHROPIC:
             blocks = data.get("content", [])
-            # Debug: show raw content structure
-            if blocks:
-                b0 = blocks[0] if isinstance(blocks, list) else blocks
-                print(f"[llm] content type={type(blocks).__name__}, block0 keys={list(b0.keys()) if isinstance(b0, dict) else type(b0).__name__}")
-            text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
-            # Fallback: try other field names
-            if not text and isinstance(blocks, list):
-                for b in blocks:
-                    if isinstance(b, dict):
-                        text += b.get("text", "") or b.get("value", "") or b.get("content", "") or ""
-            if not text and isinstance(blocks, str):
+            if isinstance(blocks, str):
                 text = blocks
+            elif isinstance(blocks, list):
+                # Skip thinking blocks, extract text blocks
+                text = ""
+                for b in blocks:
+                    if not isinstance(b, dict):
+                        continue
+                    if b.get("type") == "text":
+                        text += b.get("text", "")
+                # Fallback: if no text block, try thinking block
+                if not text:
+                    for b in blocks:
+                        if isinstance(b, dict) and b.get("type") == "thinking":
+                            text += b.get("thinking", "") or b.get("text", "")
+            else:
+                text = str(blocks)
             print(f"[llm] anthropic parsed: {len(blocks) if isinstance(blocks, list) else 1} blocks, text_len={len(text)}")
-            if not text and blocks:
-                print(f"[llm] WARNING: no text extracted, raw blocks: {str(blocks)[:300]}")
             return text
         else:
             text = data["choices"][0]["message"]["content"].strip()
@@ -102,7 +105,7 @@ Format:
 def expand_queries(keyword: str, domain: str = "physics") -> list[str]:
     """Return a list of 2-3 expanded search queries for a keyword."""
     user = f"Keyword: {keyword}\nDomain: {domain}"
-    raw = _chat(EXPAND_SYSTEM, user, temperature=0.4, max_tokens=256)
+    raw = _chat(EXPAND_SYSTEM, user, temperature=0.4, max_tokens=4096)
     if not raw:
         return [keyword]
     try:
@@ -211,7 +214,7 @@ def synthesize_trends(curated: list[dict]) -> dict:
     slim = [{"topic": p.get("topic", ""), "title": p.get("title", ""),
              "tldr": p.get("tldr", "")} for p in curated]
     user = json.dumps(slim, ensure_ascii=False, indent=2)
-    raw = _chat(TRENDS_SYSTEM, user, temperature=0.4, max_tokens=1024)
+    raw = _chat(TRENDS_SYSTEM, user, temperature=0.4, max_tokens=4096)
     if not raw:
         return {"top": []}
     raw = raw.strip()
